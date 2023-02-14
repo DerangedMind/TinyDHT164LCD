@@ -70,6 +70,7 @@ void sendCommand(uint8_t val) {
 // inverts state of pin, delays, then reverts state back
 void pulseOut(byte pin) {
   byte pinValue = digitalRead(pin);
+  delayMicroseconds(10);
   digitalWrite(pin, !pinValue);
   delayMicroseconds(10);
   digitalWrite(pin, pinValue);
@@ -92,110 +93,50 @@ void clearDisplay() {
   sendCommand(0x02);  // home
 }
 
-// void writeHelloWorld() {
-//   char helloString[] = "Hello world!";
-//   writeToLCD(helloString, Line1);
-// }
-
-// void displayReading(char label[], char metric[], float value, int location, int width, int floats) {
-//   char tempString[width];
-//     dtostrf(value, -width, floats, tempString);
-
-//     writeToLCD(label, location);
-//     writeToLCD(tempString, location + 0x02);
-//     writeToLCD(metric, location + 0x02 + 0x04);
-// }
-
-// void writeTemperature(bool asFahrenheit = false) {
-//   char label[] = "T ";
-//   char metric[] = "\337C";
-
-//   float sensorTemp = dht.readTemperature(asFahrenheit);
-//   // if (sensorTemp == -999) {
-//   //   char errorMessage[] = "ReadErr: -999";
-//   //   writeToLCD(errorMessage, Line1);
-//   // } else {
-//     char tempString[4];
-//     dtostrf(sensorTemp, -4, 1, tempString);
-
-//     writeToLCD(label, Line1);
-//     writeToLCD(tempString, Line1 + 2);
-//     writeToLCD(metric, Line1 + 2 + 3);
-//   // }
-// }
-
-// void writeHumidity() {
-//   char label[] = "H ";
-//   char metric[] = "%";
-
-//   float sensorHum = dht.readHumidity();
-  
-//   // if (sensorHum == -99) {
-//   //   char errorMessage[] = "ReadErr: -99";
-//   //   writeToLCD(errorMessage, Line1);
-//   // } else {
-//     char humidityString[3];
-//     dtostrf(sensorHum, -3, 1, humidityString);
-
-//     writeToLCD(label, Line1 + 0x08);
-//     writeToLCD(humidityString, Line1 + 0x08 + 0x02);
-//     writeToLCD(metric, Line1 + 0x08 + 0x02 + 0x04);
-//   // }
-// }
-
-int pow(int base, int exp) {
-    if(exp < 0) return -1;
-
-    int result = 1;
-    while (exp)
-    {
-        if (exp & 1) result *= base;
-        exp >>= 1;
-        base *= base;
-    }
-
-    return result;
 }
-
 
 double getSVP(double t) {
-    double expo = pow(2.71828, (t / (t + 287.3)) * 17.2694);
-    return 610.78 * expo;
+    return 610.78 * exp((t / (t + 287.3)) * 17.2694);
 }
 
-void writeAVPD() {
+void displaySensorData() {
+  // char tempString[4];
   float t = dht.readTemperature();
+  // dtostrf(t, -4, 1, tempString);
+  
+  delayMicroseconds(1000);
+  sendCommand(Line1); // Go to Line1
+  writeChar(0x54);       // "T"
+  writeChar(0x20);       // " "
+  writeFloat(t, 1);      // "21.7"
+  writeChar(0b11011111); // "˚"
+  writeChar(0b01000011); // "C"
+  writeChar(0x20);       // " "
+  
+  // char humidityString[3];
   float h = dht.readHumidity();
+  // dtostrf(h, -3, 1, humidityString);
 
-  char tLabel[] = "T ";
-  char tMetric[] = "\337C";
-  char tempString[4];
-  dtostrf(t, -4, 1, tempString);
+  writeChar(0b01001000); // "H"
+  writeChar(0x20);       // " "
+  writeFloat(h, 1);      // "35.1"
+  writeChar(0b00100101); // "%"
 
-  writeToLCD(tLabel, Line1);
-  writeToLCD(tempString, Line1 + 2);
-  writeToLCD(tMetric, Line1 + 2 + 3);
-
-  char hLabel[] = "H ";
-  char hMetric[] = "%";
-  char humidityString[3];
-  dtostrf(h, -3, 1, humidityString);
-
-  writeToLCD(hLabel, Line1 + 0x08);
-  writeToLCD(humidityString, Line1 + 0x08 + 0x02);
-  writeToLCD(hMetric, Line1 + 0x08 + 0x02 + 0x04);
 
   float avpd = getSVP(t) * (1 - h / 100);
   float lvpd = (getSVP(t - 2) - (getSVP(t) * h / 100)) / 1000;
 
-  char label[] = "LVPD";
-  char metric[] = "kPa";
-  char value[4];
-  dtostrf(lvpd, -4, 2, value);
-
-  writeToLCD(label, Line2);
-  writeToLCD(value, Line2 + 0x04);
-
+  sendCommand(Line2);
+  writeChar(0b01001100); // "L"
+  writeChar(0b01010110); // "V"
+  writeChar(0b01010000); // "P"
+  writeChar(0b01000100); // "D"
+  writeChar(0x20);       // " "
+  writeFloat(lvpd, 2);   // "1.22"
+  writeChar(0x20);       // " "
+  writeChar(0b01101011); // "k"
+  writeChar(0b01010000); // "P"
+  writeChar(0b01100001); // "a"
 }
 
 void writeChar(byte value) {
@@ -205,7 +146,20 @@ void writeChar(byte value) {
   digitalWrite(RS, LOW);
 }
 
-// Below we pass a pointer to array1[0].
+// change a float to ASCII
+// dtostrf(floatVar, minWidth, decimalPrecision, charBuf);
+void writeFloat(float value, int precision) {
+  char numberString[4];
+  dtostrf(value, -3, precision, numberString);
+  writeToLCD(numberString);
+}
+
+// writes *char[] to LCD, location optional
+void writeToLCD(char *s) {
+  delayMicroseconds(1000);
+  while (*s) writeChar(*(s++));
+}
+
 void writeToLCD(char *s, int location) {
   delayMicroseconds(1000);
   sendCommand(location);  // where to begin
@@ -213,21 +167,6 @@ void writeToLCD(char *s, int location) {
 }
 
 void loop() {
-  // clearDisplay();
-  // writeHelloWorld();
-  // displayReading("T", "\337C", dht.readTemperature(), Line1, 4, 1);
-  // displayReading("H", "%", dht.readHumidity(), Line1 + 0x07, 4, 1);
-  // writeTemperature();
-  // writeHumidity();
-  writeAVPD();
-  delay(12500);
+  displaySensorData();
+  delay(12000);
 }
-
-// change a float to ASCII
-// dtostrf(floatVar, minWidth, decimalPadding, charBuf);
-// float is number of decimal point values to display
-// void writeFloat(float value, int location) {
-//   char numberString[10];
-//   dtostrf(value, 5, 1, numberString);
-//   writeToLCD(numberString, location);
-// }
